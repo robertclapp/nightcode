@@ -4,11 +4,25 @@ import { tool } from "ai";
 export const Mode = {
   BUILD: "BUILD",
   PLAN: "PLAN",
+  FIX: "FIX",
 } as const;
 
-export const modeSchema = z.enum([Mode.BUILD, Mode.PLAN]);
+export const modeSchema = z.enum([Mode.BUILD, Mode.PLAN, Mode.FIX]);
 
 export type ModeType = (typeof Mode)[keyof typeof Mode];
+
+/** Selectable agents, in display order. */
+export const MODES: ModeType[] = [Mode.BUILD, Mode.PLAN, Mode.FIX];
+
+const MODE_LABELS: Record<ModeType, string> = {
+  [Mode.BUILD]: "Build",
+  [Mode.PLAN]: "Plan",
+  [Mode.FIX]: "Fix",
+};
+
+export function getModeLabel(mode: ModeType): string {
+  return MODE_LABELS[mode];
+}
 
 export const toolInputSchemas = {
   readFile: z.object({
@@ -81,7 +95,9 @@ export const buildToolContracts = {
 export type ToolContracts = typeof buildToolContracts;
 
 export function getToolContracts(mode: ModeType) {
-  return mode === Mode.PLAN 
-    ? readOnlyToolContracts 
+  // PLAN is read-only. BUILD and FIX both need write/edit/bash tools — FIX
+  // layers the test-tamper guard on top at the execution choke point.
+  return mode === Mode.PLAN
+    ? readOnlyToolContracts
     : buildToolContracts;
 };

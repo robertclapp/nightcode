@@ -10,9 +10,26 @@ export {
 
 export {
   Mode,
+  MODES,
+  getModeLabel,
   modeSchema,
   toolInputSchemas,
   getToolContracts,
   type ToolContracts,
   type ModeType,
 } from "./schemas";
+
+export {
+  isTestFile,
+  findTestWeakeningSignals,
+  assessFixModeMutation,
+  detectTestFileWriteInBash,
+  type FixModeMutationInput,
+  type FixModeAssessment,
+} from "./test-guard";
+
+export {
+  detectTestCommand,
+  type DetectedTestCommand,
+  type TestCommandSource,
+} from "./detect-test-command";

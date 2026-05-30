@@ -1,6 +1,12 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
-import { toolInputSchemas, Mode, type ModeType } from "@nightcode/shared";
+import {
+  toolInputSchemas,
+  Mode,
+  assessFixModeMutation,
+  detectTestFileWriteInBash,
+  type ModeType,
+} from "@nightcode/shared";
 
 const MAX_FILE_SIZE = 10_000;
 const MAX_RESULTS = 200;
@@ -26,9 +32,45 @@ function truncate(value: string, limit: number) {
     : value;
 }
 
+/**
+ * Enforce the Test Fixer agent's promise at the execution choke point: in FIX
+ * mode the agent may fix the code under test, but must never modify, disable,
+ * or delete the tests themselves — whether via the file tools or via bash.
+ */
+function enforceFixModeGuard(toolName: string, input: unknown) {
+  if (toolName === "writeFile") {
+    const { path, content } = toolInputSchemas.writeFile.parse(input);
+    const assessment = assessFixModeMutation({ toolName, path, addedText: content });
+    if (!assessment.allowed) throw new Error(assessment.reason);
+    return;
+  }
+
+  if (toolName === "editFile") {
+    const { path, newString } = toolInputSchemas.editFile.parse(input);
+    const assessment = assessFixModeMutation({ toolName, path, addedText: newString });
+    if (!assessment.allowed) throw new Error(assessment.reason);
+    return;
+  }
+
+  if (toolName === "bash") {
+    const { command } = toolInputSchemas.bash.parse(input);
+    const tamperedPath = detectTestFileWriteInBash(command);
+    if (tamperedPath) {
+      throw new Error(
+        `Fix mode blocked a shell command that would modify the test file "${tamperedPath}". ` +
+          "Fix the implementation instead; if the test itself is wrong, stop and ask a human.",
+      );
+    }
+  }
+}
+
 export async function executeLocalTool(toolName: string, input: unknown, mode: ModeType) {
   if (mode === Mode.PLAN && !["readFile", "listDirectory", "glob", "grep"].includes(toolName)) {
     throw new Error(`Tool ${toolName} is not available in PLAN mode`);
+  }
+
+  if (mode === Mode.FIX) {
+    enforceFixModeGuard(toolName, input);
   }
 
   switch (toolName) {
