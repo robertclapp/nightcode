@@ -36,20 +36,25 @@ function truncate(value: string, limit: number) {
  * Enforce the Test Fixer agent's promise at the execution choke point: in FIX
  * mode the agent may fix the code under test, but must never modify, disable,
  * or delete the tests themselves — whether via the file tools or via bash.
+ *
+ * Blocking violations throw. Non-blocking, lower-confidence signals (e.g. an
+ * edit to a non-test file that introduces a trivially-true assertion) are
+ * returned as warnings so the caller can surface them to the model and user
+ * rather than dropping a safety signal.
  */
-function enforceFixModeGuard(toolName: string, input: unknown) {
+function enforceFixModeGuard(toolName: string, input: unknown): string[] {
   if (toolName === "writeFile") {
     const { path, content } = toolInputSchemas.writeFile.parse(input);
     const assessment = assessFixModeMutation({ toolName, path, addedText: content });
     if (!assessment.allowed) throw new Error(assessment.reason);
-    return;
+    return assessment.warnings;
   }
 
   if (toolName === "editFile") {
     const { path, newString } = toolInputSchemas.editFile.parse(input);
     const assessment = assessFixModeMutation({ toolName, path, addedText: newString });
     if (!assessment.allowed) throw new Error(assessment.reason);
-    return;
+    return assessment.warnings;
   }
 
   if (toolName === "bash") {
@@ -66,6 +71,7 @@ function enforceFixModeGuard(toolName: string, input: unknown) {
   // Read-only tools (readFile, listDirectory, glob, grep) intentionally pass
   // through. If a new file-mutating tool is ever added to the executor, add an
   // explicit guard branch for it above — it will not be covered by default.
+  return [];
 }
 
 export async function executeLocalTool(toolName: string, input: unknown, mode: ModeType) {
@@ -73,9 +79,9 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
     throw new Error(`Tool ${toolName} is not available in PLAN mode`);
   }
 
-  if (mode === Mode.FIX) {
-    enforceFixModeGuard(toolName, input);
-  }
+  // In FIX mode the guard blocks test tampering and returns any non-blocking
+  // weakening warnings, which we attach to the tool output below.
+  const fixWarnings = mode === Mode.FIX ? enforceFixModeGuard(toolName, input) : [];
 
   switch (toolName) {
     case "readFile": {
@@ -175,6 +181,7 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
         success: true as const,
         path: relative(cwd, resolved),
         bytesWritten: Buffer.byteLength(content, "utf-8"),
+        ...(fixWarnings.length ? { warnings: fixWarnings } : {}),
       };
     }
     case "editFile": {
@@ -187,7 +194,11 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
       if (occurrences > 1) throw new Error(`oldString is ambiguous; found ${occurrences} matches`);
 
       await writeFile(resolved, content.replace(oldString, newString), "utf-8");
-      return { success: true as const, path: relative(cwd, resolved) };
+      return {
+        success: true as const,
+        path: relative(cwd, resolved),
+        ...(fixWarnings.length ? { warnings: fixWarnings } : {}),
+      };
     }
     case "bash": {
       const { command, timeout = DEFAULT_TIMEOUT } = toolInputSchemas.bash.parse(input);
