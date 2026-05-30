@@ -164,14 +164,23 @@ function hasTestDirSegment(path: string): boolean {
 }
 
 /**
+ * A sed/`y` substitution script such as `s/testing/foo/` or `3s/a/b/g`. Its `/`
+ * delimiters make it look like a path with directory segments, so it must be
+ * excluded before path classification to avoid false positives (e.g. a
+ * substitution containing the word `testing` is not a write to a test dir).
+ */
+const SED_SUBSTITUTION = /^\d*[sy]\/[^/]*\/[^/]*\//;
+
+/**
  * Best-effort detection of test tampering hidden inside a bash command, e.g.
  * `> foo.test.ts`, `sed -i ... foo.spec.ts`, `rm __tests__/x.ts`, or wiping a
  * whole test directory with `rm -rf __tests__`.
  *
  * Conservative by design: it only fires when a *mutating* shell op co-occurs
  * with a token that points at test code, so read-only commands such as
- * `cat foo.test.ts` or `bun test` are never blocked. This closes the obvious
- * holes; a full guarantee for arbitrary shell requires OS-level sandboxing.
+ * `cat foo.test.ts` or `bun test` are never blocked. It may still over-block in
+ * rare cases (e.g. a test-dir word in a compound command); over-blocking is the
+ * safe direction here. A full guarantee for arbitrary shell needs OS sandboxing.
  */
 export function detectTestFileWriteInBash(command: string): string | null {
   if (!command) return null;
@@ -180,9 +189,14 @@ export function detectTestFileWriteInBash(command: string): string | null {
 
   const tokens = command.split(/[\s'"`=()<>|;&]+/).filter(Boolean);
   for (const token of tokens) {
-    // A conventional test directory is a valid mutating target even as a bare
-    // name (e.g. `rm -rf __tests__`) with no slash or extension, which would
-    // otherwise slip past the path-shaped filter below.
+    // Skip sed substitution scripts (e.g. `s/testing/foo/`); their delimiters
+    // make them look like test-directory paths to both checks below.
+    if (SED_SUBSTITUTION.test(token)) continue;
+
+    // A conventional test directory is a valid mutating target whether bare
+    // (`rm -rf __tests__`) or nested (`rm -rf src/__tests__`). isTestFile only
+    // inspects directory segments *before* the basename, so it would miss a
+    // trailing test dir — hence this explicit check.
     if (hasTestDirSegment(token)) return normalizePath(token);
 
     // Otherwise only treat path-shaped tokens as candidates (slash or dot-ext).

@@ -140,6 +140,8 @@ describe("detectTestFileWriteInBash", () => {
     ["mv spec spec_old", "spec"],
     ["rm -rf src/__tests__", "src/__tests__"],
     ["find tests -delete", "tests"],
+    // A sed script is skipped, but a sed write to a real test file is blocked.
+    ["sed -i 's/test/x/' src/__tests__/a.ts", "src/__tests__/a.ts"],
   ])("blocks mutating command %s", (command, expected) => {
     expect(detectTestFileWriteInBash(command)).toBe(expected);
   });
@@ -154,6 +156,10 @@ describe("detectTestFileWriteInBash", () => {
     "mkdir tests", // creating (not mutating) a test dir is fine
     "echo hi > notes.txt",
     "grep -r skip src/math.test.ts",
+    // sed substitution scripts whose pattern merely contains a test-dir word
+    // must not be treated as writes to a test directory.
+    "sed -i 's/testing/foo/' src/app.ts",
+    "sed -i 's/spec/replaced/g' src/config.ts",
   ])("allows non-tampering command: %s", (command) => {
     expect(detectTestFileWriteInBash(command)).toBeNull();
   });
