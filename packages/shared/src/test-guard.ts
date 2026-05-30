@@ -151,17 +151,27 @@ const MUTATING_SHELL_OPS = [
   /\bsed\s+-[a-z]*i/i, // sed -i / sed -ri ...
   /\b(?:rm|mv|cp|truncate|shred|dd)\b/i,
   /\b(?:tee)\b/i,
+  /\s-delete\b/i, // find ... -delete
   />>?/, // output redirection into a file
 ];
 
+/** True if any segment of `path` is a conventional test directory. */
+function hasTestDirSegment(path: string): boolean {
+  return normalizePath(path)
+    .split("/")
+    .filter(Boolean)
+    .some((segment) => TEST_DIR_SEGMENTS.has(segment.toLowerCase()));
+}
+
 /**
  * Best-effort detection of test tampering hidden inside a bash command, e.g.
- * `> foo.test.ts`, `sed -i ... foo.spec.ts`, or `rm __tests__/x.ts`.
+ * `> foo.test.ts`, `sed -i ... foo.spec.ts`, `rm __tests__/x.ts`, or wiping a
+ * whole test directory with `rm -rf __tests__`.
  *
  * Conservative by design: it only fires when a *mutating* shell op co-occurs
- * with a token that looks like a test-file path, so read-only commands such as
+ * with a token that points at test code, so read-only commands such as
  * `cat foo.test.ts` or `bun test` are never blocked. This closes the obvious
- * hole; a full guarantee for arbitrary shell requires OS-level sandboxing.
+ * holes; a full guarantee for arbitrary shell requires OS-level sandboxing.
  */
 export function detectTestFileWriteInBash(command: string): string | null {
   if (!command) return null;
@@ -170,7 +180,12 @@ export function detectTestFileWriteInBash(command: string): string | null {
 
   const tokens = command.split(/[\s'"`=()<>|;&]+/).filter(Boolean);
   for (const token of tokens) {
-    // Only treat path-shaped tokens as candidates (has a slash or a dot-ext).
+    // A conventional test directory is a valid mutating target even as a bare
+    // name (e.g. `rm -rf __tests__`) with no slash or extension, which would
+    // otherwise slip past the path-shaped filter below.
+    if (hasTestDirSegment(token)) return normalizePath(token);
+
+    // Otherwise only treat path-shaped tokens as candidates (slash or dot-ext).
     if (!token.includes("/") && !token.includes(".")) continue;
     if (isTestFile(token)) return normalizePath(token);
   }

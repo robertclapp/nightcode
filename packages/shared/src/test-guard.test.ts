@@ -134,6 +134,12 @@ describe("detectTestFileWriteInBash", () => {
     ["echo '' > src/math.spec.ts", "src/math.spec.ts"],
     ["rm __tests__/user.ts", "__tests__/user.ts"],
     ["printf '' > ./src/api.test.ts", "src/api.test.ts"],
+    // Whole test-directory wipes — the P1 vector: bare and nested.
+    ["rm -rf __tests__", "__tests__"],
+    ["rm -rf tests", "tests"],
+    ["mv spec spec_old", "spec"],
+    ["rm -rf src/__tests__", "src/__tests__"],
+    ["find tests -delete", "tests"],
   ])("blocks mutating command %s", (command, expected) => {
     expect(detectTestFileWriteInBash(command)).toBe(expected);
   });
@@ -143,6 +149,9 @@ describe("detectTestFileWriteInBash", () => {
     "bun test",
     "npm test",
     "rm -rf dist",
+    "rm -rf node_modules",
+    "rm -rf test-results", // build output, not a conventional test dir
+    "mkdir tests", // creating (not mutating) a test dir is fine
     "echo hi > notes.txt",
     "grep -r skip src/math.test.ts",
   ])("allows non-tampering command: %s", (command) => {
