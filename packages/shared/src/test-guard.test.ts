@@ -60,6 +60,7 @@ describe("findTestWeakeningSignals", () => {
     "describe.only('suite', () => {})",
     "test.todo('later')",
     "xit('disabled', () => {})",
+    "pending('not implemented yet')",
     "@pytest.mark.skip(reason='flaky')",
     't.Skip("flaky on CI")',
     "@Disabled",
@@ -73,6 +74,8 @@ describe("findTestWeakeningSignals", () => {
     "expect(sum(1, 2)).toBe(3)",
     "const skip = computeSkip(items)", // "skip" as an identifier, not .skip()
     "return user.isActive",
+    "queue.pending()", // a method named pending(), not the Jasmine global
+    "const pendingCount = getPending()",
     "",
   ])("ignores legitimate code: %s", (snippet) => {
     expect(findTestWeakeningSignals(snippet)).toEqual([]);

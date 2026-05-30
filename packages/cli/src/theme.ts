@@ -1,3 +1,5 @@
+import { Mode, type ModeType } from "@nightcode/shared";
+
 export type ThemeColors = {
   primary: string;
   planMode: string;
@@ -17,6 +19,16 @@ export type Theme = {
   name: string;
   colors: ThemeColors;
 };
+
+/**
+ * Accent color for the active agent, so each mode is visually distinct:
+ * Build → primary, Plan → planMode, Fix → success (drive the suite to green).
+ */
+export function getModeColor(mode: ModeType, colors: ThemeColors): string {
+  if (mode === Mode.PLAN) return colors.planMode;
+  if (mode === Mode.FIX) return colors.success;
+  return colors.primary;
+}
 
 export const THEMES: Theme[] = [
   {

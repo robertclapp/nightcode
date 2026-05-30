@@ -110,6 +110,10 @@ function promptForMode(mode: ModeType): string {
       return FIX_PROMPT;
     case Mode.BUILD:
       return BUILD_PROMPT;
+    default: {
+      const _exhaustive: never = mode;
+      throw new Error(`Unknown mode: ${String(_exhaustive)}`);
+    }
   }
 }
 

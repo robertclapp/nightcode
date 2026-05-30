@@ -83,6 +83,7 @@ const WEAKENING_SIGNALS: { pattern: RegExp; label: string }[] = [
   { pattern: /\b(?:it|test|describe)\.only\b/, label: "adds .only() (narrows the suite)" },
   { pattern: /\b(?:it|test|describe)\.todo\b/, label: "converts a test to .todo()" },
   { pattern: /\b(?:xit|xdescribe|xtest)\b/, label: "disables a test (xit/xdescribe)" },
+  { pattern: /(?<!\.)\bpending\s*\(/, label: "adds pending() to disable a Jasmine test" },
   { pattern: /@(?:pytest\.mark\.skip|unittest\.skip)/, label: "adds a Python skip decorator" },
   { pattern: /\bt\.Skip\(/, label: "adds t.Skip() to a Go test" },
   { pattern: /@(?:Disabled|Ignore)\b/, label: "adds @Disabled/@Ignore (JVM)" },

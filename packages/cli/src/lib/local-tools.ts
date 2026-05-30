@@ -62,6 +62,10 @@ function enforceFixModeGuard(toolName: string, input: unknown) {
       );
     }
   }
+
+  // Read-only tools (readFile, listDirectory, glob, grep) intentionally pass
+  // through. If a new file-mutating tool is ever added to the executor, add an
+  // explicit guard branch for it above — it will not be covered by default.
 }
 
 export async function executeLocalTool(toolName: string, input: unknown, mode: ModeType) {

@@ -30,6 +30,8 @@ export {
 
 export {
   detectTestCommand,
+  detectPackageManager,
   type DetectedTestCommand,
   type TestCommandSource,
+  type PackageManager,
 } from "./detect-test-command";

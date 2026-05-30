@@ -19,7 +19,7 @@ import { useKeyboardLayer } from "../providers/keyboard-layer";
 import { useDialog } from "../providers/dialog";
 import { useTheme } from "../providers/theme";
 import { usePromptConfig } from "../providers/prompt-config";
-import { Mode } from "@nightcode/shared";
+import { getModeColor } from "../theme";
 
 const MAX_VISIBLE_MENTIONS = 8;
 const CURRENT_DIRECTORY = process.cwd();
@@ -540,7 +540,7 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
     <box width="100%" alignItems="center">
       <box
         border={["left"]}
-        borderColor={mode === Mode.BUILD ? colors.primary : colors.planMode}
+        borderColor={getModeColor(mode, colors)}
         customBorderChars={{
           ...EmptyBorder,
           vertical: "┃",

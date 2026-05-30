@@ -1,6 +1,7 @@
-import { Mode, type ModeType } from "@nightcode/shared";
+import { type ModeType } from "@nightcode/shared";
 import { EmptyBorder } from "../border";
 import { useTheme } from "../../providers/theme";
+import { getModeColor } from "../../theme";
 
 type Props = {
   message: string;
@@ -14,7 +15,7 @@ export function UserMessage({ message, mode }: Props) {
     <box width="100%" alignItems="center">
       <box
         border={["left"]}
-        borderColor={mode === Mode.BUILD ? colors.primary : colors.planMode}        width="100%"
+        borderColor={getModeColor(mode, colors)}        width="100%"
         customBorderChars={{
           ...EmptyBorder,
           vertical: "┃",
