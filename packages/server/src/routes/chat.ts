@@ -44,6 +44,8 @@ const submitSchema = z.object({
     .min(1),
   mode: modeSchema,
   model: z.string().refine(isSupportedChatModel, "Unsupported model"),
+  // Detected by the CLI in FIX mode; injected into the Test Fixer prompt.
+  testCommand: z.string().min(1).max(300).optional(),
 });
 
 const submitValidator = zValidator("json", submitSchema, (result, c) => {
@@ -70,7 +72,7 @@ const app = new Hono<AuthenticatedEnv>()
     submitValidator,
     async (c) => {
       const userId = c.get("userId");
-      const { id, messages, mode, model } = c.req.valid("json");
+      const { id, messages, mode, model, testCommand } = c.req.valid("json");
 
       const session = await db.session.findUnique({
         where: { id, userId },
@@ -112,7 +114,7 @@ const app = new Hono<AuthenticatedEnv>()
 
       const result = streamText({
         model: resolvedModel.model,
-        system: buildSystemPrompt({ mode }),
+        system: buildSystemPrompt({ mode, testCommand }),
         messages: modelMessages,
         tools,
         providerOptions: resolvedModel.providerOptions,

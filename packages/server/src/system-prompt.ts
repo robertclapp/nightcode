@@ -1,7 +1,9 @@
-import { Mode, type ModeType } from "@nightcode/shared";
+import { Mode, DEFAULT_FIX_MAX_ITERATIONS, type ModeType } from "@nightcode/shared";
 
 type SystemPromptParams = {
   mode: ModeType;
+  /** Detected project test command, injected into the FIX prompt when known. */
+  testCommand?: string;
 };
 
 const INTRO = `You are an expert software engineer working as a coding assistant inside a terminal application.
@@ -102,12 +104,33 @@ ${SHARED_RULES}
 4. **Prefer editFile** and the smallest possible change. A large rewrite to pass
    a test is a red flag — fix the root cause.`;
 
-function promptForMode(mode: ModeType): string {
+/**
+ * The FIX prompt, with the detected test command and the enforced iteration
+ * budget appended when the client was able to detect how to run the suite.
+ */
+function fixPrompt(testCommand?: string): string {
+  const sanitized = testCommand?.replace(/[`\r\n]/g, "").trim();
+  if (!sanitized) return FIX_PROMPT;
+
+  return `${FIX_PROMPT}
+
+### Project test command
+The project's test suite runs with:
+\`\`\`
+${sanitized}
+\`\`\`
+Use exactly this command (via the bash tool) for every test run. You have a
+budget of ${DEFAULT_FIX_MAX_ITERATIONS} failing test runs — the execution layer
+enforces it and will stop the run when it is spent — so read each failure
+carefully and make every attempt count.`;
+}
+
+function promptForMode(mode: ModeType, testCommand?: string): string {
   switch (mode) {
     case Mode.PLAN:
       return PLAN_PROMPT;
     case Mode.FIX:
-      return FIX_PROMPT;
+      return fixPrompt(testCommand);
     case Mode.BUILD:
       return BUILD_PROMPT;
     default: {
@@ -117,6 +140,6 @@ function promptForMode(mode: ModeType): string {
   }
 }
 
-export function buildSystemPrompt({ mode }: SystemPromptParams): string {
-  return [INTRO, promptForMode(mode)].join("\n\n");
+export function buildSystemPrompt({ mode, testCommand }: SystemPromptParams): string {
+  return [INTRO, promptForMode(mode, testCommand)].join("\n\n");
 };

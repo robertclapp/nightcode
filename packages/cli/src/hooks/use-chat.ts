@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useChat as useAiChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -7,10 +7,18 @@ import {
   type LanguageModelUsage,
   type UIMessage,
 } from "ai";
-import { type ModeType, type SupportedChatModelId, type ToolContracts } from "@nightcode/shared";
+import {
+  Mode,
+  FixRunController,
+  toolInputSchemas,
+  type ModeType,
+  type SupportedChatModelId,
+  type ToolContracts,
+} from "@nightcode/shared";
 import { apiClient } from "../lib/api-client";
 import { getAuth } from "../lib/auth";
 import { executeLocalTool } from "../lib/local-tools";
+import { detectProjectTestCommand } from "../lib/detect-project-test-command";
 
 export type ChatMessageMetadata = {
   mode?: ModeType;
@@ -29,6 +37,11 @@ type ChatTools = {
 export type Message = UIMessage<ChatMessageMetadata, never, ChatTools>;
 
 export function useChat(sessionId: string, initialMessages: Message[]) {
+  // One controller per FIX run, created on each user submit in FIX mode. It
+  // recognizes test runs by their command, enforces the failing-run budget,
+  // and stops the tool loop when that budget is spent.
+  const fixRunRef = useRef<FixRunController | null>(null);
+
   const transport = useMemo(() => {
     return new DefaultChatTransport<Message>({
       api: apiClient.chat.$url().toString(),
@@ -55,6 +68,7 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
             messages: requestMessages,
             mode: message.metadata?.mode ?? metadata?.mode,
             model: message.metadata?.model ?? metadata?.model,
+            testCommand: fixRunRef.current?.testCommand,
           },
         }
       }
@@ -67,15 +81,51 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     transport,
     onToolCall({ toolCall }) {
       const mode = chat.messages.at(-1)?.metadata?.mode ?? "BUILD";
+      const fixRun = mode === Mode.FIX ? fixRunRef.current : null;
 
-      void executeLocalTool(toolCall.toolName, toolCall.input, mode)
-        .then((output) =>
+      if (fixRun) {
+        const refusal = fixRun.gateToolCall(toolCall.toolName);
+        if (refusal) {
           chat.addToolOutput({
             tool: toolCall.toolName as keyof ChatTools,
             toolCallId: toolCall.toolCallId,
-            output,
-          }),
-        )
+            state: "output-error",
+            errorText: refusal,
+          });
+          return;
+        }
+      }
+
+      void executeLocalTool(toolCall.toolName, toolCall.input, mode)
+        .then((output) => {
+          let finalOutput: unknown = output;
+
+          // Feed bash results to the fix-run controller so it can track the
+          // suite state, and reflect the run status back to the model.
+          if (fixRun && toolCall.toolName === "bash") {
+            const { command } = toolInputSchemas.bash.parse(toolCall.input);
+            const exitCode = (output as { exitCode?: unknown }).exitCode;
+            const event = fixRun.observeBashResult(
+              command,
+              typeof exitCode === "number" ? exitCode : 1,
+            );
+
+            if (event.type === "test-run-failed") {
+              finalOutput = {
+                ...output,
+                fixRun: { failedRuns: event.failedRuns, remainingBudget: event.remaining },
+              };
+            } else if (event.type === "test-run-passed") {
+              finalOutput = { ...output, fixRun: { suitePassed: true } };
+            }
+          }
+
+          chat.addToolOutput({
+            tool: toolCall.toolName as keyof ChatTools,
+            toolCallId: toolCall.toolCallId,
+            output: finalOutput,
+          });
+        })
         .catch((error) =>
           chat.addToolOutput({
             tool: toolCall.toolName as keyof ChatTools,
@@ -85,7 +135,11 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
           }),
         );
     },
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen(options) {
+      const fixRun = fixRunRef.current;
+      if (fixRun && !fixRun.shouldAutoContinue()) return false;
+      return lastAssistantMessageIsCompleteWithToolCalls(options);
+    },
   });
 
   return {
@@ -93,6 +147,17 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     status: chat.status,
     error: chat.error,
     submit: (params: { userText: string; mode: ModeType; model: SupportedChatModelId }) => {
+      // Each user prompt in FIX mode starts a fresh fix run with a fresh
+      // budget; outside FIX mode no controller is active.
+      if (params.mode === Mode.FIX) {
+        const detected = detectProjectTestCommand();
+        fixRunRef.current = detected
+          ? new FixRunController({ testCommand: detected.command })
+          : null;
+      } else {
+        fixRunRef.current = null;
+      }
+
       return chat.sendMessage({
         text: params.userText,
         metadata: {

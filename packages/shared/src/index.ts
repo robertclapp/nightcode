@@ -35,3 +35,10 @@ export {
   type TestCommandSource,
   type PackageManager,
 } from "./detect-test-command";
+
+export {
+  FixRunController,
+  DEFAULT_FIX_MAX_ITERATIONS,
+  type FixRunState,
+  type FixRunEvent,
+} from "./fix-loop";
