@@ -54,14 +54,34 @@ export function scrubEnv(env: NodeJS.ProcessEnv = process.env): Record<string, s
   return out;
 }
 
+/** The handful of device nodes ordinary programs need; far narrower than all of /dev. */
+const ALLOWED_DEVICE_NODES = [
+  "/dev/null",
+  "/dev/zero",
+  "/dev/random",
+  "/dev/urandom",
+  "/dev/tty",
+  "/dev/dtracehelper",
+  "/dev/stdin",
+  "/dev/stdout",
+  "/dev/stderr",
+];
+
 /** A `sandbox-exec` (macOS) profile: read anywhere, write only under the project. */
 export function macSandboxProfile(policy: SandboxPolicy): string {
   const dir = policy.writableDir;
+  // Writes are confined to the project dir. The system temp dirs stay writable
+  // because build/test tooling routinely needs them (their contents are
+  // transient and not the user's source); /dev is narrowed from the whole tree
+  // to the specific nodes programs actually use.
+  const deviceRules = ALLOWED_DEVICE_NODES.map((node) => `(literal ${JSON.stringify(node)})`).join(
+    " ",
+  );
   return [
     "(version 1)",
     "(allow default)",
     "(deny file-write*)",
-    `(allow file-write* (subpath ${JSON.stringify(dir)}) (subpath "/tmp") (subpath "/dev") (subpath "/private/tmp"))`,
+    `(allow file-write* (subpath ${JSON.stringify(dir)}) (subpath "/tmp") (subpath "/private/tmp") (subpath "/dev/fd") ${deviceRules})`,
     policy.blockNetwork ? "(deny network*)" : "",
   ]
     .filter(Boolean)

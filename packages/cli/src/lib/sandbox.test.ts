@@ -95,6 +95,12 @@ describe("macSandboxProfile", () => {
     expect(profile).not.toContain("(deny network*)");
   });
 
+  test("narrows /dev to specific device nodes rather than the whole tree", () => {
+    const profile = macSandboxProfile({ writableDir: "/work/p" });
+    expect(profile).toContain('(literal "/dev/null")');
+    expect(profile).not.toContain('(subpath "/dev")');
+  });
+
   test("adds a network deny when blockNetwork is set", () => {
     expect(macSandboxProfile({ writableDir: "/p", blockNetwork: true })).toContain(
       "(deny network*)",

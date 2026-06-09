@@ -11,8 +11,7 @@ describe("FixRunController.isTestRunCommand", () => {
     "  bun run test  ",
     "bun  run   test", // extra whitespace normalized
     "bun run test -- --filter math",
-    "bun run test && echo done",
-  ])("recognizes test run: %s", (command) => {
+  ])("recognizes clean test run: %s", (command) => {
     expect(makeController().isTestRunCommand(command)).toBe(true);
   });
 
@@ -22,7 +21,15 @@ describe("FixRunController.isTestRunCommand", () => {
     "npm test",
     "ls -la",
     "",
-  ])("rejects non-test-run: %s", (command) => {
+    // Shell chaining/redirection must not be trusted as a test run, or the
+    // agent could fake green / dodge the budget.
+    "bun run test || true",
+    "bun run test && echo done",
+    "bun run test; exit 0",
+    "bun run test | tee log",
+    "bun run test > out.txt",
+    "bun run test `rm -rf x`",
+  ])("rejects non-clean test command: %s", (command) => {
     expect(makeController().isTestRunCommand(command)).toBe(false);
   });
 });
@@ -102,6 +109,18 @@ describe("FixRunController gating after exhaustion", () => {
     expect(controller.gateToolCall("bash")).toContain("budget");
     expect(controller.gateToolCall("readFile")).toBeNull();
     expect(controller.gateToolCall("glob")).toBeNull();
+  });
+
+  test("read-only calls also advance the exhaustion grace window", () => {
+    const controller = makeController(1);
+    exhaust(controller);
+
+    // Read-only calls are allowed (no refusal) but still count, so a model that
+    // only ever reads cannot keep the loop alive forever.
+    for (let i = 0; i < 4; i++) {
+      expect(controller.gateToolCall("readFile")).toBeNull();
+    }
+    expect(controller.shouldAutoContinue()).toBe(false);
   });
 
   test("auto-continue survives a grace window of refusals, then stops", () => {

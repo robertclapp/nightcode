@@ -29,6 +29,13 @@ const POST_EXHAUSTION_REFUSAL_LIMIT = 3;
 
 const READ_ONLY_TOOLS = new Set(["readFile", "listDirectory", "glob", "grep"]);
 
+/**
+ * Shell chain / redirection metacharacters. A test command containing any of
+ * these is not a clean test run — e.g. `bun run test || true` would always exit
+ * 0, letting the agent fake a green run or dodge the budget.
+ */
+const SHELL_CHAIN = /[;&|<>()`\n]/;
+
 export type FixRunState = "running" | "green" | "exhausted";
 
 /** A read-only view of a fix run's progress, for display in the UI. */
@@ -55,7 +62,7 @@ export class FixRunController {
   private totalRuns = 0;
   private failedRuns = 0;
   private lastRunPassed = false;
-  private refusalsAfterExhaustion = 0;
+  private postExhaustionToolCalls = 0;
 
   constructor(options: { testCommand: string; maxIterations?: number }) {
     this.testCommand = normalizeCommand(options.testCommand);
@@ -79,10 +86,14 @@ export class FixRunController {
   }
 
   /**
-   * True when a bash command is a run of the configured test command — exact,
-   * or with extra arguments appended (e.g. `bun run test -- --filter math`).
+   * True when a bash command is a CLEAN run of the configured test command —
+   * exact, or with extra arguments appended (e.g. `bun run test -- --filter
+   * math`). Commands that chain or redirect (`bun run test || true`,
+   * `... ; rm -rf x`, `... > out`) are rejected so the agent cannot fake a
+   * green run or avoid spending budget; only a clean invocation is trusted.
    */
   isTestRunCommand(command: string): boolean {
+    if (SHELL_CHAIN.test(command)) return false;
     const normalized = normalizeCommand(command);
     return normalized === this.testCommand || normalized.startsWith(`${this.testCommand} `);
   }
@@ -117,9 +128,12 @@ export class FixRunController {
    */
   gateToolCall(toolName: string): string | null {
     if (this.state !== "exhausted") return null;
+
+    // Count every call once exhausted — read-only ones included — so a model
+    // that keeps calling readFile/grep still drives the grace window closed.
+    this.postExhaustionToolCalls++;
     if (READ_ONLY_TOOLS.has(toolName)) return null;
 
-    this.refusalsAfterExhaustion++;
     return (
       `Fix run stopped: the budget of ${this.maxIterations} failing test runs has been used. ` +
       "Do not attempt further changes or test runs. Summarize the diagnosis, what you tried, " +
@@ -135,6 +149,6 @@ export class FixRunController {
    */
   shouldAutoContinue(): boolean {
     if (this.state !== "exhausted") return true;
-    return this.refusalsAfterExhaustion <= POST_EXHAUSTION_REFUSAL_LIMIT;
+    return this.postExhaustionToolCalls <= POST_EXHAUSTION_REFUSAL_LIMIT;
   }
 }
