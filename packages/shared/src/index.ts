@@ -41,4 +41,5 @@ export {
   DEFAULT_FIX_MAX_ITERATIONS,
   type FixRunState,
   type FixRunEvent,
+  type FixRunSnapshot,
 } from "./fix-loop";

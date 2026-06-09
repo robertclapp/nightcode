@@ -7,6 +7,12 @@ import {
   detectTestFileWriteInBash,
   type ModeType,
 } from "@nightcode/shared";
+import {
+  buildSandboxArgv,
+  detectSandboxMechanism,
+  sandboxConfinesFilesystem,
+  scrubEnv,
+} from "./sandbox";
 
 const MAX_FILE_SIZE = 10_000;
 const MAX_RESULTS = 200;
@@ -202,11 +208,26 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
     }
     case "bash": {
       const { command, timeout = DEFAULT_TIMEOUT } = toolInputSchemas.bash.parse(input);
-      const proc = Bun.spawn(["bash", "-c", command], {
-        cwd: resolveInsideCwd(".").resolved,
+      const cwd = resolveInsideCwd(".").resolved;
+
+      // In FIX mode the agent runs unattended, so confine bash. Always scrub
+      // secrets from the environment; additionally run inside an OS sandbox when
+      // one that confines the filesystem is available (writes restricted to the
+      // project dir). On machines without bubblewrap/sandbox-exec the scrub plus
+      // the structured tamper guard remain the protection. BUILD/PLAN unchanged.
+      const sandboxed = mode === Mode.FIX;
+      const mechanism = detectSandboxMechanism();
+      const useOsSandbox = sandboxed && sandboxConfinesFilesystem(mechanism);
+      const argv = useOsSandbox
+        ? buildSandboxArgv(mechanism, command, { writableDir: cwd })
+        : ["bash", "-c", command];
+      const env = sandboxed ? scrubEnv() : { ...process.env, TERM: "dumb" };
+
+      const proc = Bun.spawn(argv, {
+        cwd,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, TERM: "dumb" },
+        env,
       });
       const timer = setTimeout(() => proc.kill(), timeout);
       const [stdout, stderr] = await Promise.all([

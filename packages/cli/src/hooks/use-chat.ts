@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useChat as useAiChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -11,6 +11,7 @@ import {
   Mode,
   FixRunController,
   toolInputSchemas,
+  type FixRunSnapshot,
   type ModeType,
   type SupportedChatModelId,
   type ToolContracts,
@@ -41,6 +42,8 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
   // recognizes test runs by their command, enforces the failing-run budget,
   // and stops the tool loop when that budget is spent.
   const fixRunRef = useRef<FixRunController | null>(null);
+  // A render-friendly mirror of the controller for the status indicator.
+  const [fixRun, setFixRun] = useState<FixRunSnapshot | null>(null);
 
   const transport = useMemo(() => {
     return new DefaultChatTransport<Message>({
@@ -81,11 +84,12 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     transport,
     onToolCall({ toolCall }) {
       const mode = chat.messages.at(-1)?.metadata?.mode ?? "BUILD";
-      const fixRun = mode === Mode.FIX ? fixRunRef.current : null;
+      const fixRunController = mode === Mode.FIX ? fixRunRef.current : null;
 
-      if (fixRun) {
-        const refusal = fixRun.gateToolCall(toolCall.toolName);
+      if (fixRunController) {
+        const refusal = fixRunController.gateToolCall(toolCall.toolName);
         if (refusal) {
+          setFixRun(fixRunController.getSnapshot());
           chat.addToolOutput({
             tool: toolCall.toolName as keyof ChatTools,
             toolCallId: toolCall.toolCallId,
@@ -101,11 +105,11 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
           let finalOutput: unknown = output;
 
           // Feed bash results to the fix-run controller so it can track the
-          // suite state, and reflect the run status back to the model.
-          if (fixRun && toolCall.toolName === "bash") {
+          // suite state, and reflect the run status back to the model and UI.
+          if (fixRunController && toolCall.toolName === "bash") {
             const { command } = toolInputSchemas.bash.parse(toolCall.input);
             const exitCode = (output as { exitCode?: unknown }).exitCode;
-            const event = fixRun.observeBashResult(
+            const event = fixRunController.observeBashResult(
               command,
               typeof exitCode === "number" ? exitCode : 1,
             );
@@ -117,6 +121,10 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
               };
             } else if (event.type === "test-run-passed") {
               finalOutput = { ...output, fixRun: { suitePassed: true } };
+            }
+
+            if (event.type !== "not-a-test-run") {
+              setFixRun(fixRunController.getSnapshot());
             }
           }
 
@@ -146,6 +154,7 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
     messages: chat.messages,
     status: chat.status,
     error: chat.error,
+    fixRun,
     submit: (params: { userText: string; mode: ModeType; model: SupportedChatModelId }) => {
       // Each user prompt in FIX mode starts a fresh fix run with a fresh
       // budget; outside FIX mode no controller is active.
@@ -157,6 +166,7 @@ export function useChat(sessionId: string, initialMessages: Message[]) {
       } else {
         fixRunRef.current = null;
       }
+      setFixRun(fixRunRef.current?.getSnapshot() ?? null);
 
       return chat.sendMessage({
         text: params.userText,

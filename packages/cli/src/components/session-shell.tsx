@@ -1,7 +1,9 @@
 import { TextAttributes } from "@opentui/core";
 import type { ReactNode } from "react";
+import type { FixRunSnapshot } from "@nightcode/shared";
 import { InputBar } from "./input-bar";
 import { Spinner } from "./spinner";
+import { FixRunStatus } from "./fix-run-status";
 import { usePromptConfig } from "../providers/prompt-config";
 
 type Props = {
@@ -10,6 +12,7 @@ type Props = {
   inputDisabled?: boolean;
   loading?: boolean;
   interruptible?: boolean;
+  fixRun?: FixRunSnapshot | null;
 };
 
 export function SessionShell({
@@ -18,6 +21,7 @@ export function SessionShell({
   inputDisabled = false,
   loading = false,
   interruptible = false,
+  fixRun = null,
 }: Props) {
   const { mode } = usePromptConfig();
 
@@ -53,6 +57,7 @@ export function SessionShell({
               {interruptible ? <text>esc to interrupt</text> : null}
             </>
           ) : null}
+          {fixRun ? <FixRunStatus fixRun={fixRun} /> : null}
         </box>
 
         <box flexDirection="row" gap={1} flexShrink={0} marginLeft="auto">

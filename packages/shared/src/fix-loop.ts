@@ -31,6 +31,14 @@ const READ_ONLY_TOOLS = new Set(["readFile", "listDirectory", "glob", "grep"]);
 
 export type FixRunState = "running" | "green" | "exhausted";
 
+/** A read-only view of a fix run's progress, for display in the UI. */
+export type FixRunSnapshot = {
+  state: FixRunState;
+  failedRuns: number;
+  maxIterations: number;
+  testCommand: string;
+};
+
 export type FixRunEvent =
   | { type: "not-a-test-run" }
   | { type: "test-run-passed"; totalRuns: number }
@@ -58,6 +66,16 @@ export class FixRunController {
     if (this.lastRunPassed) return "green";
     if (this.failedRuns >= this.maxIterations) return "exhausted";
     return "running";
+  }
+
+  /** A snapshot of the current run for rendering in the UI. */
+  getSnapshot(): FixRunSnapshot {
+    return {
+      state: this.state,
+      failedRuns: this.failedRuns,
+      maxIterations: this.maxIterations,
+      testCommand: this.testCommand,
+    };
   }
 
   /**
