@@ -29,8 +29,11 @@ jobs:
       - name: Generate Prisma client
         run: bun run --cwd packages/database db:generate
 
-      - name: Typecheck shared package
-        run: bunx tsc --noEmit -p packages/shared/tsconfig.json
+      - name: Typecheck
+        run: |
+          bunx tsc --noEmit -p packages/shared/tsconfig.json
+          bunx tsc --noEmit -p packages/server/tsconfig.json
+          bunx tsc --noEmit -p packages/cli/tsconfig.json
 
       - name: Run tests
         run: bun test packages/
