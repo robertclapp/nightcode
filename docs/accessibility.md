@@ -23,6 +23,7 @@ once. The individual switches:
 | `NIGHTCODE_HIGH_CONTRAST` | Selects the **High Contrast** theme. |
 | `NIGHTCODE_REDUCED_MOTION` | Replaces the animated spinner with a static indicator. |
 | `NIGHTCODE_ASCII` | Uses ASCII borders/glyphs instead of Unicode box-drawing. |
+| `NIGHTCODE_PLAIN` / `--plain` | Runs the **plain (screen-reader) mode** — a linear, announced, plain-text loop instead of the full-screen TUI. |
 
 Any value except `0`, `false`, `no`, `off`, or empty counts as "on".
 
@@ -50,12 +51,21 @@ is **fundamentally difficult for screen readers** — NVDA/JAWS/VoiceOver/Orca
 read the terminal text buffer and cannot follow a redrawn canvas. No amount of
 color or glyph tuning changes that.
 
-The high-impact next step for blind and low-vision users is a separate
-**accessible output mode**: a linear, plain-text transcript printed to stdout
-(no alternate screen) that a screen reader can read top-to-bottom, with the
-agent's actions and results announced as they happen. The preference plumbing
-(`NIGHTCODE_ACCESSIBLE`) is already in place to gate it. This is planned, not
-yet built.
+For blind and low-vision users there is a separate **plain (screen-reader)
+mode**, entered with `nightcode --plain` (or `NIGHTCODE_PLAIN=1`): a linear,
+plain-text loop printed to stdout — no alternate screen — that a screen reader
+reads top-to-bottom. It announces each turn with a speaker label (`You:` /
+`Assistant:`) and describes tool calls in words ("Assistant ran Read file
+math.ts"), with no color, box-drawing, or spinners.
+
+What's shipped and tested: the announcement engine (`@nightcode/shared`:
+`renderTranscript`, `describeToolPart`, `announceFixRun`), the input/echo/render
+loop, the message adapter, and mode detection — the plain loop runs end-to-end.
+The remaining integration is connecting it to a **live agent turn** (auth,
+session, and the streaming tool loop, which today lives in the React `useChat`
+hook); until that lands, plain mode renders the conversation but defers agent
+runs to the standard interface. Validating it against a real screen reader
+(NVDA/JAWS/VoiceOver/Orca) is the final step.
 
 ## Contrast audit
 

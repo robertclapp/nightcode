@@ -53,3 +53,15 @@ export {
   type AccessibilityPreferences,
   type ContrastLevel,
 } from "./accessibility";
+
+export {
+  humanizeToolName,
+  describeToolPart,
+  renderTranscriptMessage,
+  renderTranscript,
+  announceError,
+  announceFixRun,
+  type ToolStatus,
+  type TranscriptPart,
+  type TranscriptMessage,
+} from "./accessible-transcript";
