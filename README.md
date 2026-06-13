@@ -55,6 +55,7 @@ git checkout 07-tool-calling  # example: jump to tool calling
 
 - **Terminal AI Chat** - Run an AI coding assistant directly in your terminal with an OpenTUI and React interface
 - **Plan, Build, and Fix Modes** - Read-only planning, full implementation, or the **Test Fixer** agent that drives failing tests to green without ever touching the tests ([guide](docs/test-fixer.md))
+- **Accessibility** - High-contrast and monochrome themes verified to WCAG AAA, `NO_COLOR` support, reduced motion, and ASCII rendering, all via `NIGHTCODE_ACCESSIBLE=1` ([guide](docs/accessibility.md))
 - **Streaming Responses** - Stream model output through the AI SDK with persisted session history
 - **Local Project Tools** - Read files, list directories, glob, grep, write files, edit files, and run shell commands inside the current project
 - **Multi-Model Support** - Use supported Anthropic and OpenAI chat models from a shared model registry

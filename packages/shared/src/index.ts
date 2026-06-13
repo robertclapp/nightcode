@@ -43,3 +43,13 @@ export {
   type FixRunEvent,
   type FixRunSnapshot,
 } from "./fix-loop";
+
+export {
+  resolveAccessibilityPreferences,
+  parseHexColor,
+  relativeLuminance,
+  contrastRatio,
+  meetsContrast,
+  type AccessibilityPreferences,
+  type ContrastLevel,
+} from "./accessibility";

@@ -3,8 +3,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createContext, useContext, useState, useCallback } from "react";
 import type { ReactNode } from "react";
+import { resolveAccessibilityPreferences } from "@nightcode/shared";
 import type { ThemeColors, Theme } from "../../theme";
-import { DEFAULT_THEME, THEMES } from "../../theme";
+import {
+  DEFAULT_THEME,
+  HIGH_CONTRAST_THEME,
+  MONOCHROME_THEME,
+  THEMES,
+  themeMeetsContrast,
+} from "../../theme";
 
 const CONFIG_DIR = join(homedir(), ".nightcode");
 const THEME_PREFERENCES_PATH = join(CONFIG_DIR, "preferences.json");
@@ -14,15 +21,28 @@ type ThemePreferences = {
 };
 
 function getInitialTheme(): Theme {
+  const { noColor, highContrast } = resolveAccessibilityPreferences(process.env);
+
+  let savedTheme: Theme | undefined;
   try {
     const preferences = JSON.parse(
       readFileSync(THEME_PREFERENCES_PATH, "utf8"),
     ) as Partial<ThemePreferences>;
-    const savedTheme = THEMES.find((theme) => theme.name === preferences.themeName);
-    return savedTheme ?? DEFAULT_THEME;
+    savedTheme = THEMES.find((theme) => theme.name === preferences.themeName);
   } catch {
-    return DEFAULT_THEME;
+    // No saved preference; fall through to the accessibility-aware defaults.
   }
+
+  // NO_COLOR is the strongest signal: drop hue entirely.
+  if (noColor) return MONOCHROME_THEME;
+
+  // High-contrast mode honors a saved theme only when it's already readable,
+  // otherwise it upgrades to the guaranteed-AAA theme.
+  if (highContrast) {
+    return savedTheme && themeMeetsContrast(savedTheme, "AA") ? savedTheme : HIGH_CONTRAST_THEME;
+  }
+
+  return savedTheme ?? DEFAULT_THEME;
 };
 
 function persistTheme(theme: Theme) {
