@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { TranscriptMessage } from "@nightcode/shared";
 import type { Message } from "../hooks/use-chat";
 import { toTranscriptMessage, runPlainSession } from "./plain-session";
-import { isPlainMode } from "./plain-mode";
+import { isPlainMode, parseModeCommand } from "./plain-mode";
 
 /** Build a Message-shaped fixture (the real type is too strict to construct by hand). */
 function message(role: "user" | "assistant", parts: unknown[]): Message {
@@ -99,5 +99,15 @@ describe("isPlainMode", () => {
     expect(isPlainMode([], { NIGHTCODE_PLAIN: "1" })).toBe(true);
     expect(isPlainMode([], { NIGHTCODE_PLAIN: "0" })).toBe(false);
     expect(isPlainMode([], {})).toBe(false);
+  });
+});
+
+describe("parseModeCommand", () => {
+  test("maps mode commands case-insensitively and ignores the rest", () => {
+    expect(parseModeCommand("/build")).toBe("BUILD");
+    expect(parseModeCommand("  /PLAN ")).toBe("PLAN");
+    expect(parseModeCommand("/fix")).toBe("FIX");
+    expect(parseModeCommand("/exit")).toBeNull();
+    expect(parseModeCommand("hello")).toBeNull();
   });
 });

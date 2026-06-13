@@ -56,16 +56,24 @@ mode**, entered with `nightcode --plain` (or `NIGHTCODE_PLAIN=1`): a linear,
 plain-text loop printed to stdout — no alternate screen — that a screen reader
 reads top-to-bottom. It announces each turn with a speaker label (`You:` /
 `Assistant:`) and describes tool calls in words ("Assistant ran Read file
-math.ts"), with no color, box-drawing, or spinners.
+math.ts"), with no color, box-drawing, or spinners. It signs you in if needed,
+opens a session, and runs **the same agent** as the TUI — `/build`, `/plan`, and
+`/fix` switch agent mode, and FIX-run progress is announced as it happens.
 
-What's shipped and tested: the announcement engine (`@nightcode/shared`:
-`renderTranscript`, `describeToolPart`, `announceFixRun`), the input/echo/render
-loop, the message adapter, and mode detection — the plain loop runs end-to-end.
-The remaining integration is connecting it to a **live agent turn** (auth,
-session, and the streaming tool loop, which today lives in the React `useChat`
-hook); until that lands, plain mode renders the conversation but defers agent
-runs to the standard interface. Validating it against a real screen reader
-(NVDA/JAWS/VoiceOver/Orca) is the final step.
+How it works: the agent turn loop (stream a reply, run the tool calls it asks
+for locally, feed the results back, repeat until it stops) was extracted out of
+the React `useChat` hook into a framework-agnostic session
+(`@nightcode/cli`: `createAgentSession`). The TUI and plain mode now share one
+implementation of the loop and the tool handling; the only difference is the
+front end that renders it. Plain mode renders it with the announcement engine
+(`@nightcode/shared`: `renderTranscript`, `describeToolPart`, `announceFixRun`).
+
+What's shipped and tested: the announcement engine, the headless agent session
+(driven end-to-end in tests against a fake transport, including a real local
+tool execution and the multi-step continuation), the message adapter, mode
+commands, and graceful handling of the not-signed-in / server-unreachable cases.
+The remaining step is validation against a real screen reader
+(NVDA/JAWS/VoiceOver/Orca) with a live backend.
 
 ## Contrast audit
 
