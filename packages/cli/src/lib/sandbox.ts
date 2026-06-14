@@ -70,10 +70,15 @@ const ALLOWED_DEVICE_NODES = [
 /** A `sandbox-exec` (macOS) profile: read anywhere, write only under the project. */
 export function macSandboxProfile(policy: SandboxPolicy): string {
   const dir = policy.writableDir;
-  // Writes are confined to the project dir. The system temp dirs stay writable
-  // because build/test tooling routinely needs them (their contents are
-  // transient and not the user's source); /dev is narrowed from the whole tree
-  // to the specific nodes programs actually use.
+  // Writes are confined to the project dir, with two deliberate exceptions: the
+  // system temp dirs (build/test tooling routinely needs them; their contents
+  // are transient and not the user's source), and a narrow allowlist of /dev
+  // nodes (vs. the whole /dev tree). So macOS confinement is not strictly
+  // repo-only — tightening the system-temp grant into a repo-scoped TMPDIR is a
+  // tracked follow-up (#1), deferred because it needs validation on a real Mac.
+  // Acceptable meanwhile: this sandbox is defense-in-depth behind the primary,
+  // platform-independent guarantees (the credential scrub + the structured
+  // test-tamper guard), and Linux already gets full fs confinement via bwrap.
   const deviceRules = ALLOWED_DEVICE_NODES.map((node) => `(literal ${JSON.stringify(node)})`).join(
     " ",
   );
