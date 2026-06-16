@@ -36,7 +36,8 @@ describe("toTranscriptMessage", () => {
         { kind: "text", text: "Looking into it." },
         { kind: "reasoning", text: "subtracts instead of adds" },
         { kind: "tool", name: "readFile", status: "done", summary: "math.ts", detail: undefined },
-        { kind: "tool", name: "editFile", status: "error", summary: "math.ts x", detail: "not found" },
+        // editFile summarizes to its path only — the old/new strings are not read aloud.
+        { kind: "tool", name: "editFile", status: "error", summary: "math.ts", detail: "not found" },
       ],
     });
   });
@@ -53,6 +54,29 @@ describe("toTranscriptMessage", () => {
       summary: "ls",
       detail: undefined,
     });
+  });
+
+  test("summarizes to an identifier — never a file body or an option blob", () => {
+    const result = toTranscriptMessage(
+      message("assistant", [
+        { type: "tool-writeFile", toolCallId: "1", state: "output-available", input: { path: "a.ts", content: "x".repeat(5000) } },
+        { type: "tool-bash", toolCallId: "2", state: "output-available", input: { command: "bun test", timeout: 30000 } },
+      ]),
+    );
+    const summaries = result.parts.map((p) => (p.kind === "tool" ? p.summary : undefined));
+    // The 5000-char body and the numeric timeout must NOT leak into the spoken line.
+    expect(summaries).toEqual(["a.ts", "bun test"]);
+  });
+
+  test("truncates an over-long identifier", () => {
+    const result = toTranscriptMessage(
+      message("assistant", [
+        { type: "tool-readFile", toolCallId: "1", state: "output-available", input: { path: "a/".repeat(100) + "x.ts" } },
+      ]),
+    );
+    const summary = result.parts[0]?.kind === "tool" ? result.parts[0].summary : undefined;
+    expect(summary?.endsWith("…")).toBe(true);
+    expect(summary!.length).toBeLessThanOrEqual(81);
   });
 });
 
@@ -90,6 +114,27 @@ describe("runPlainSession", () => {
       },
     });
     expect(out).toEqual(["You: boom", "Error: network down"]);
+  });
+
+  test("only slash commands exit; bare 'exit'/'quit' are sent as messages", async () => {
+    const out: string[] = [];
+    const seen: string[] = [];
+    await runPlainSession({
+      input: lines(["exit", "QUIT", "/exit", "after"]),
+      print: (line) => out.push(line),
+      sendTurn: async (text) => {
+        seen.push(text);
+        return [{ role: "assistant", parts: [{ kind: "text", text: `ok ${text}` }] }];
+      },
+    });
+    // "exit"/"QUIT" go to the model; only "/exit" terminates, so "after" is never seen.
+    expect(seen).toEqual(["exit", "QUIT"]);
+    expect(out).toEqual([
+      "You: exit",
+      "Assistant: ok exit",
+      "You: QUIT",
+      "Assistant: ok QUIT",
+    ]);
   });
 });
 

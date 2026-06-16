@@ -46,6 +46,7 @@ export {
 
 export {
   resolveAccessibilityPreferences,
+  isEnabled as isEnvFlagEnabled,
   parseHexColor,
   relativeLuminance,
   contrastRatio,

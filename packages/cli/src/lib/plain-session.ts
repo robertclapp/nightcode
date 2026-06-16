@@ -8,6 +8,7 @@ import {
   type TranscriptPart,
 } from "@nightcode/shared";
 import type { Message } from "../hooks/use-chat";
+import { toErrorMessage } from "./errors";
 
 type ClientPart = Message["parts"][number];
 
@@ -17,11 +18,41 @@ function toolStatus(state: unknown): ToolStatus {
   return "running";
 }
 
+/** Keys that identify what a tool acted on, in priority order. */
+const SUMMARY_KEYS = ["path", "command", "pattern", "file", "query", "url"];
+const MAX_SUMMARY_LEN = 80;
+
+function compact(value: string): string {
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  return oneLine.length > MAX_SUMMARY_LEN ? `${oneLine.slice(0, MAX_SUMMARY_LEN)}…` : oneLine;
+}
+
+/**
+ * A short, spoken-friendly summary of a tool's input. Prefers an identifying
+ * field (path / command / pattern) and truncates, so a screen reader announces
+ * "ran Write file math.ts" rather than reading an entire file body, a full
+ * edit's old+new text, or a numeric timeout aloud.
+ */
 function summarizeInput(input: unknown): string | undefined {
   if (input == null) return undefined;
-  if (typeof input !== "object") return String(input);
-  const values = Object.values(input as Record<string, unknown>).map(String);
-  return values.length ? values.join(" ") : undefined;
+  if (typeof input !== "object") return compact(String(input));
+
+  const record = input as Record<string, unknown>;
+  for (const key of SUMMARY_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return compact(value);
+  }
+  // No known identifier: fall back to the first short scalar, skipping long
+  // strings (file bodies) and nested objects (which stringify to junk).
+  for (const value of Object.values(record)) {
+    if (
+      (typeof value === "string" || typeof value === "number" || typeof value === "boolean") &&
+      String(value).trim()
+    ) {
+      return compact(String(value));
+    }
+  }
+  return undefined;
 }
 
 function partToTranscript(part: ClientPart): TranscriptPart | null {
@@ -55,10 +86,19 @@ export function toTranscriptMessage(message: Message): TranscriptMessage {
 /** Yield input lines from a readable stream (e.g. process.stdin). */
 export async function* readLines(stream: NodeJS.ReadableStream): AsyncGenerator<string> {
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
-  for await (const line of rl) yield line;
+  try {
+    for await (const line of rl) yield line;
+  } finally {
+    // Close the interface when the consumer stops (e.g. on /exit). Otherwise the
+    // readline listeners stay attached to an interactive stdin (TTY), keeping the
+    // process alive so it hangs instead of exiting.
+    rl.close();
+  }
 }
 
-const EXIT_COMMANDS = new Set(["/exit", "/quit", "exit", "quit"]);
+// Slash-prefixed only, to match the on-screen `/exit` hint and the `/build`,
+// `/plan`, `/fix` commands — and so the bare words "exit"/"quit" remain sendable.
+const EXIT_COMMANDS = new Set(["/exit", "/quit"]);
 
 export type PlainSessionDeps = {
   /** Source of user input lines. */
@@ -95,7 +135,7 @@ export async function runPlainSession(deps: PlainSessionDeps): Promise<void> {
         for (const line of renderTranscriptMessage(message)) print(line);
       }
     } catch (error) {
-      print(announceError(error instanceof Error ? error.message : String(error)));
+      print(announceError(toErrorMessage(error)));
     }
   }
 }

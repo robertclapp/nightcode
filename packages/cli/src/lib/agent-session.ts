@@ -44,6 +44,7 @@ import { apiClient } from "./api-client";
 import { getAuth } from "./auth";
 import { executeLocalTool } from "./local-tools";
 import { detectProjectTestCommand } from "./detect-project-test-command";
+import { toErrorMessage } from "./errors";
 import type { Message } from "../hooks/use-chat";
 
 /**
@@ -187,7 +188,7 @@ export async function handleAgentToolCall(deps: HandleToolCallDeps): Promise<voi
       tool: toolCall.toolName,
       toolCallId: toolCall.toolCallId,
       state: "output-error",
-      errorText: error instanceof Error ? error.message : String(error),
+      errorText: toErrorMessage(error),
     });
   }
 }
@@ -250,8 +251,24 @@ class HeadlessChatState implements ChatState<Message> {
     ];
   };
 
-  snapshot = <T>(value: T): T => structuredClone(value);
+  // Mirrors ReactChatState's defensive copy. Tool outputs are typed `unknown`,
+  // so fall back to sharing the reference if a value isn't structured-cloneable
+  // rather than throwing DataCloneError mid-stream and killing the turn (the
+  // headless caller only reads messages after the turn settles).
+  snapshot = <T>(value: T): T => {
+    try {
+      return structuredClone(value);
+    } catch {
+      return value;
+    }
+  };
 }
+
+/**
+ * A hard ceiling on tool-loop re-sends within a single `sendTurn`. Generous —
+ * real turns stop far sooner — but bounds a runaway model in an unattended run.
+ */
+const MAX_TURN_STEPS = 100;
 
 /** A concrete `AbstractChat` for headless use (the base class only lacks state). */
 class HeadlessChat extends AbstractChat<Message> {
@@ -337,10 +354,27 @@ export function createAgentSession(opts: CreateAgentSessionOptions): AgentSessio
       // Run the multi-step loop: wait for this turn's tool executions to record
       // their outputs, then re-send while the model is still calling tools (and
       // a FIX budget, if any, hasn't been spent).
+      //
+      // `AbstractChat.makeRequest` swallows transport/stream errors (it sets
+      // status to "error" and does NOT throw), so we MUST check `chat.status`
+      // every iteration: otherwise a failed re-send leaves the last message
+      // unchanged and still tool-complete, `shouldAutoContinue` stays true, and
+      // the loop re-sends forever with no backoff. The step cap is a final
+      // backstop against a model that never stops calling tools (the React TUI
+      // has a human to interrupt; a headless run does not).
+      let steps = 0;
       while (true) {
         while (pending.size) await Promise.allSettled([...pending]);
+        if (chat.status === "error") break;
         if (!shouldAutoContinue(fixRun, { messages: chat.messages })) break;
+        if (++steps > MAX_TURN_STEPS) break;
         await chat.sendMessage();
+      }
+
+      // Surface a swallowed request failure (including a failed first send, which
+      // otherwise yields no assistant message and dead silence for the caller).
+      if (chat.status === "error") {
+        throw chat.error ?? new Error("The request to the model failed.");
       }
 
       // The new messages are the user echo plus the assistant turn(s); the

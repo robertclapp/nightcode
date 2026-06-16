@@ -83,9 +83,13 @@ export function announceError(message: string): string {
   return `Error: ${message}`;
 }
 
-/** A spoken line for Test Fixer run state. */
+/**
+ * A spoken line for Test Fixer run state. `state` mirrors `FixRunState`
+ * ("running" | "green" | "exhausted"); it is inlined rather than imported to
+ * keep this module dependency-free.
+ */
 export function announceFixRun(snapshot: {
-  state: ToolStatus | "green" | "exhausted" | "running";
+  state: "running" | "green" | "exhausted";
   failedRuns: number;
   maxIterations: number;
 }): string {

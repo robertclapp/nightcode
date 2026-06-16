@@ -179,4 +179,48 @@ describe("createAgentSession", () => {
     // The transport was invoked twice (initial turn + post-tool continuation).
     expect(call).toBe(2);
   });
+
+  test("surfaces a failed first send instead of returning silent emptiness", async () => {
+    const transport: ChatTransport<Message> = {
+      sendMessages: async () => {
+        throw new Error("connection refused");
+      },
+      reconnectToStream: async () => null,
+    };
+    const session = createAgentSession({ sessionId: "s2", transport });
+    // The SDK swallows the transport error; sendTurn must re-surface it so the
+    // caller can announce it, rather than resolving to [] (dead silence).
+    await expect(
+      session.sendTurn("hi", { mode: Mode.BUILD, model: DEFAULT_CHAT_MODEL_ID }),
+    ).rejects.toThrow("connection refused");
+  });
+
+  test("does not livelock when a continuation fails — it surfaces and stops", async () => {
+    let call = 0;
+    const transport: ChatTransport<Message> = {
+      sendMessages: async () => {
+        call += 1;
+        if (call === 1) {
+          return chunkStream([
+            { type: "start" },
+            { type: "start-step" },
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "ok" },
+            { type: "text-end", id: "t" },
+            { type: "tool-input-available", toolCallId: "c1", toolName: "readFile", input: { path: "note.txt" } },
+            { type: "finish-step" },
+            { type: "finish" },
+          ]);
+        }
+        throw new Error("500 on continuation");
+      },
+      reconnectToStream: async () => null,
+    };
+    const session = createAgentSession({ sessionId: "s3", transport });
+    await expect(
+      session.sendTurn("go", { mode: Mode.BUILD, model: DEFAULT_CHAT_MODEL_ID }),
+    ).rejects.toThrow("500 on continuation");
+    // The old loop re-sent forever; now it stops after the first failed retry.
+    expect(call).toBe(2);
+  });
 });

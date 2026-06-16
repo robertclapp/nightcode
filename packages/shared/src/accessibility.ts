@@ -32,7 +32,7 @@ export type AccessibilityPreferences = {
 const OFF_VALUES = new Set(["", "0", "false", "no", "off"]);
 
 /** True when an env var is present and not an explicit "off" value. */
-function isEnabled(value: string | undefined): boolean {
+export function isEnabled(value: string | undefined): boolean {
   return value != null && !OFF_VALUES.has(value.trim().toLowerCase());
 }
 

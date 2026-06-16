@@ -2,6 +2,7 @@ import {
   announceError,
   announceFixRun,
   DEFAULT_CHAT_MODEL_ID,
+  isEnvFlagEnabled,
   Mode,
   type ModeType,
   type SupportedChatModelId,
@@ -13,20 +14,19 @@ import { getAuth } from "./auth";
 import { performLogin } from "./oauth";
 import { apiClient } from "./api-client";
 import { getErrorMessage } from "./http-errors";
-
-const OFF_VALUES = new Set(["", "0", "false", "no", "off"]);
+import { toErrorMessage } from "./errors";
 
 /**
  * Whether the user requested the plain, screen-reader-friendly output mode,
- * via `--plain` or `NIGHTCODE_PLAIN`. Pure so it can be unit tested.
+ * via `--plain` or `NIGHTCODE_PLAIN`. Pure so it can be unit tested. Shares the
+ * "off"-value parsing with the other accessibility flags so they stay in step.
  */
 export function isPlainMode(
   argv: string[] = process.argv,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   if (argv.includes("--plain")) return true;
-  const flag = env.NIGHTCODE_PLAIN;
-  return flag != null && !OFF_VALUES.has(flag.trim().toLowerCase());
+  return isEnvFlagEnabled(env.NIGHTCODE_PLAIN);
 }
 
 /** Map a `/build`, `/plan`, or `/fix` line to its mode, or null if it isn't one. */
@@ -52,7 +52,7 @@ async function ensureAuthenticated(print: (line: string) => void): Promise<boole
     print("Signed in.");
     return true;
   } catch (error) {
-    print(announceError(`sign-in failed: ${error instanceof Error ? error.message : String(error)}`));
+    print(announceError(`sign-in failed: ${toErrorMessage(error)}`));
     return false;
   }
 }
@@ -80,7 +80,7 @@ export async function runPlainMode(): Promise<void> {
     if (!res.ok) throw new Error(await getErrorMessage(res));
     sessionId = (await res.json()).id;
   } catch (error) {
-    print(announceError(`could not start a session: ${error instanceof Error ? error.message : String(error)}`));
+    print(announceError(`could not start a session: ${toErrorMessage(error)}`));
     return;
   }
 
@@ -105,6 +105,6 @@ export async function runPlainMode(): Promise<void> {
   try {
     await runPlainSession({ input: readLines(process.stdin), print, sendTurn });
   } catch (error) {
-    print(announceError(error instanceof Error ? error.message : String(error)));
+    print(announceError(toErrorMessage(error)));
   }
 }
