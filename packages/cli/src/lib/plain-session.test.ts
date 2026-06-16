@@ -1,8 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import type { TranscriptMessage } from "@nightcode/shared";
+import {
+  DEFAULT_CHAT_MODEL_ID,
+  SUPPORTED_CHAT_MODELS,
+  type TranscriptMessage,
+} from "@nightcode/shared";
 import type { Message } from "../hooks/use-chat";
 import { toTranscriptMessage, runPlainSession } from "./plain-session";
-import { isPlainMode, parseModeCommand } from "./plain-mode";
+import {
+  interpretCommand,
+  isPlainMode,
+  parseModeCommand,
+  parseModelCommand,
+  renderModelList,
+  resolveModelCommand,
+} from "./plain-mode";
 
 /** Build a Message-shaped fixture (the real type is too strict to construct by hand). */
 function message(role: "user" | "assistant", parts: unknown[]): Message {
@@ -154,5 +165,69 @@ describe("parseModeCommand", () => {
     expect(parseModeCommand("/fix")).toBe("FIX");
     expect(parseModeCommand("/exit")).toBeNull();
     expect(parseModeCommand("hello")).toBeNull();
+  });
+});
+
+describe("model command", () => {
+  test("parseModelCommand extracts the argument, or null when it isn't one", () => {
+    expect(parseModelCommand("/model")).toEqual({ arg: "" });
+    expect(parseModelCommand("/model opus")).toEqual({ arg: "opus" });
+    expect(parseModelCommand("  /MODEL  2 ")).toEqual({ arg: "2" });
+    expect(parseModelCommand("/models")).toBeNull();
+    expect(parseModelCommand("hello")).toBeNull();
+  });
+
+  test("resolveModelCommand: list, index, exact id, and unique substring", () => {
+    const models = SUPPORTED_CHAT_MODELS;
+    expect(resolveModelCommand("", models, DEFAULT_CHAT_MODEL_ID)).toEqual({ kind: "list" });
+    expect(resolveModelCommand("1", models, DEFAULT_CHAT_MODEL_ID)).toEqual({ kind: "set", model: models[0] });
+    expect(resolveModelCommand("claude-haiku-4-5", models, DEFAULT_CHAT_MODEL_ID)).toMatchObject({
+      kind: "set",
+      model: { id: "claude-haiku-4-5" },
+    });
+    expect(resolveModelCommand("opus", models, DEFAULT_CHAT_MODEL_ID)).toMatchObject({
+      kind: "set",
+      model: { id: "claude-opus-4-6" },
+    });
+  });
+
+  test("resolveModelCommand reports out-of-range, ambiguous, and unknown", () => {
+    const models = SUPPORTED_CHAT_MODELS;
+    expect(resolveModelCommand("99", models, DEFAULT_CHAT_MODEL_ID).kind).toBe("error");
+    const ambiguous = resolveModelCommand("gpt", models, DEFAULT_CHAT_MODEL_ID);
+    expect(ambiguous.kind === "error" && ambiguous.message).toMatch(/matches 3 models/);
+    expect(resolveModelCommand("zzz", models, DEFAULT_CHAT_MODEL_ID).kind).toBe("error");
+  });
+
+  test("renderModelList marks the current model and gives a switch hint", () => {
+    const list = renderModelList(SUPPORTED_CHAT_MODELS, "claude-opus-4-6");
+    expect(list).toMatch(/current: claude-opus-4-6/);
+    expect(list).toMatch(/claude-opus-4-6 \(anthropic\) — current/);
+    expect(list).toMatch(/Switch with \/model/);
+  });
+
+  test("interpretCommand routes help, model, mode, and plain turns", () => {
+    const state = { mode: "BUILD", model: "claude-opus-4-6" } as const;
+
+    const help = interpretCommand("/help", state);
+    expect(help.kind === "reply" && help.text).toMatch(/Commands:/);
+
+    expect(interpretCommand("/model sonnet", state)).toEqual({
+      kind: "reply",
+      text: "Model set to claude-sonnet-4-6.",
+      model: "claude-sonnet-4-6",
+    });
+
+    const list = interpretCommand("/model", state);
+    expect(list.kind).toBe("reply");
+    expect(list.kind === "reply" && list.model).toBeUndefined();
+
+    expect(interpretCommand("/fix", state)).toEqual({
+      kind: "reply",
+      text: "Mode set to fix.",
+      mode: "FIX",
+    });
+
+    expect(interpretCommand("just a question", state)).toEqual({ kind: "turn" });
   });
 });

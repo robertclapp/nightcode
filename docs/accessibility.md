@@ -57,8 +57,18 @@ plain-text loop printed to stdout — no alternate screen — that a screen read
 reads top-to-bottom. It announces each turn with a speaker label (`You:` /
 `Assistant:`) and describes tool calls in words ("Assistant ran Read file
 math.ts"), with no color, box-drawing, or spinners. It signs you in if needed,
-opens a session, and runs **the same agent** as the TUI — `/build`, `/plan`, and
-`/fix` switch agent mode, and FIX-run progress is announced as it happens.
+opens a session, and runs **the same agent** as the TUI, and FIX-run progress is
+announced as it happens.
+
+Type-in commands (everything else is sent to the agent):
+
+| Command | Effect |
+|---|---|
+| `/help` | List the commands. |
+| `/build`, `/plan`, `/fix` | Switch agent mode. |
+| `/model` | List the available models, marking the current one. |
+| `/model <number>` or `/model <name>` | Switch model (e.g. `/model 1`, `/model opus`). `<name>` matches a unique substring of the model id. |
+| `/exit` | Quit. |
 
 How it works: the agent turn loop (stream a reply, run the tool calls it asks
 for locally, feed the results back, repeat until it stops) was extracted out of
