@@ -1,3 +1,5 @@
+import { Mode, contrastRatio, type ModeType, type ContrastLevel } from "@nightcode/shared";
+
 export type ThemeColors = {
   primary: string;
   planMode: string;
@@ -17,6 +19,16 @@ export type Theme = {
   name: string;
   colors: ThemeColors;
 };
+
+/**
+ * Accent color for the active agent, so each mode is visually distinct:
+ * Build → primary, Plan → planMode, Fix → success (drive the suite to green).
+ */
+export function getModeColor(mode: ModeType, colors: ThemeColors): string {
+  if (mode === Mode.PLAN) return colors.planMode;
+  if (mode === Mode.FIX) return colors.success;
+  return colors.primary;
+}
 
 export const THEMES: Theme[] = [
   {
@@ -563,6 +575,75 @@ export const THEMES: Theme[] = [
       dimSeparator: "#555555",
     },
   },
+  {
+    // Guaranteed-readable: every text color clears WCAG AAA (>=7:1) on the
+    // black background; verified by the contrast audit in theme.test.ts.
+    name: "High Contrast",
+    colors: {
+      primary: "#FFFFFF",
+      planMode: "#FFD000",
+      selection: "#FFFFFF", // background for selected rows (rendered with black text)
+      thinking: "#00E5FF",
+      success: "#00E676",
+      error: "#FF6B6B",
+      info: "#5CC8FF",
+      background: "#000000",
+      surface: "#000000",
+      dialogSurface: "#000000",
+      thinkingBorder: "#FFFFFF",
+      dimSeparator: "#BDBDBD",
+    },
+  },
+  {
+    // Achromatic palette for NO_COLOR / total color-blindness: elements are
+    // distinguished by brightness only, never hue. Also clears WCAG AAA.
+    name: "Monochrome",
+    colors: {
+      primary: "#FFFFFF",
+      planMode: "#E0E0E0",
+      selection: "#FFFFFF",
+      thinking: "#C8C8C8",
+      success: "#FFFFFF",
+      error: "#FFFFFF",
+      info: "#D8D8D8",
+      background: "#000000",
+      surface: "#000000",
+      dialogSurface: "#000000",
+      thinkingBorder: "#FFFFFF",
+      dimSeparator: "#9E9E9E",
+    },
+  },
 ];
 
 export const DEFAULT_THEME = THEMES.find((t) => t.name === "Nightfox")!;
+
+/** The guaranteed-readable theme, selected when high-contrast mode is requested. */
+export const HIGH_CONTRAST_THEME = THEMES.find((t) => t.name === "High Contrast")!;
+
+/** Achromatic theme, selected when color is disabled (NO_COLOR). */
+export const MONOCHROME_THEME = THEMES.find((t) => t.name === "Monochrome")!;
+
+/** Theme color keys rendered as foreground text on the background. */
+const TEXT_COLOR_KEYS = [
+  "primary",
+  "planMode",
+  "success",
+  "error",
+  "info",
+  "thinking",
+] as const;
+
+/** The lowest contrast ratio among a theme's text colors against its background. */
+export function auditThemeContrast(theme: Theme): { theme: string; minRatio: number } {
+  const { background } = theme.colors;
+  const minRatio = Math.min(
+    ...TEXT_COLOR_KEYS.map((key) => contrastRatio(theme.colors[key], background)),
+  );
+  return { theme: theme.name, minRatio };
+}
+
+/** Whether every text color in the theme clears the given WCAG level on its background. */
+export function themeMeetsContrast(theme: Theme, level: ContrastLevel = "AA"): boolean {
+  const threshold = level === "AAA" ? 7 : 4.5;
+  return auditThemeContrast(theme).minRatio >= threshold;
+}

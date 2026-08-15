@@ -1,16 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useChat as useAiChat } from "@ai-sdk/react";
 import {
-  DefaultChatTransport,
   type InferUITools,
-  lastAssistantMessageIsCompleteWithToolCalls,
   type LanguageModelUsage,
   type UIMessage,
 } from "ai";
-import { type ModeType, type SupportedChatModelId, type ToolContracts } from "@nightcode/shared";
-import { apiClient } from "../lib/api-client";
-import { getAuth } from "../lib/auth";
-import { executeLocalTool } from "../lib/local-tools";
+import {
+  FixRunController,
+  type FixRunSnapshot,
+  type ModeType,
+  type SupportedChatModelId,
+  type ToolContracts,
+} from "@nightcode/shared";
+import {
+  buildChatTransport,
+  handleAgentToolCall,
+  shouldAutoContinue,
+  startFixRun,
+  type AgentChatPort,
+} from "../lib/agent-session";
 
 export type ChatMessageMetadata = {
   mode?: ModeType;
@@ -29,70 +37,49 @@ type ChatTools = {
 export type Message = UIMessage<ChatMessageMetadata, never, ChatTools>;
 
 export function useChat(sessionId: string, initialMessages: Message[]) {
-  const transport = useMemo(() => {
-    return new DefaultChatTransport<Message>({
-      api: apiClient.chat.$url().toString(),
-      headers() {
-        const auth = getAuth();
-        return auth ? { Authorization: `Bearer ${auth.token}` } : new Headers();
-      },
-      prepareSendMessagesRequest({ messages }) {
-        const message = messages[messages.length - 1];
-        if (!message) throw new Error("No message to send");
+  // One controller per FIX run, created on each user submit in FIX mode. It
+  // recognizes test runs by their command, enforces the failing-run budget,
+  // and stops the tool loop when that budget is spent.
+  const fixRunRef = useRef<FixRunController | null>(null);
+  // A render-friendly mirror of the controller for the status indicator.
+  const [fixRun, setFixRun] = useState<FixRunSnapshot | null>(null);
 
-        const metadata = messages.findLast(
-          (m) => m.metadata?.mode && m.metadata?.model,
-        )?.metadata;
-        const previousMessage = messages[messages.length - 2];
-        const requestMessages =
-          message.role === "assistant" && previousMessage?.role === "user"
-            ? [previousMessage, message]
-            : [message];
-
-        return {
-          body: {
-            id: sessionId,
-            messages: requestMessages,
-            mode: message.metadata?.mode ?? metadata?.mode,
-            model: message.metadata?.model ?? metadata?.model,
-          },
-        }
-      }
-    });
-  }, [sessionId]);
+  const transport = useMemo(
+    () => buildChatTransport({ sessionId, getTestCommand: () => fixRunRef.current?.testCommand }),
+    [sessionId],
+  );
 
   const chat = useAiChat<Message>({
     id: sessionId,
     messages: initialMessages,
     transport,
     onToolCall({ toolCall }) {
-      const mode = chat.messages.at(-1)?.metadata?.mode ?? "BUILD";
-
-      void executeLocalTool(toolCall.toolName, toolCall.input, mode)
-        .then((output) =>
-          chat.addToolOutput({
-            tool: toolCall.toolName as keyof ChatTools,
-            toolCallId: toolCall.toolCallId,
-            output,
-          }),
-        )
-        .catch((error) =>
-          chat.addToolOutput({
-            tool: toolCall.toolName as keyof ChatTools,
-            toolCallId: toolCall.toolCallId,
-            state: "output-error",
-            errorText: error instanceof Error ? error.message : String(error),
-          }),
-        );
+      // Fire-and-forget: the SDK's own re-send loop drives the continuation and
+      // React re-renders as `addToolOutput` lands. The shared handler holds the
+      // single implementation of what a tool call does (also used headlessly).
+      void handleAgentToolCall({
+        chat: chat as unknown as AgentChatPort,
+        toolCall,
+        getFixRunController: () => fixRunRef.current,
+        onFixRunChange: setFixRun,
+      });
     },
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen(options) {
+      return shouldAutoContinue(fixRunRef.current, options);
+    },
   });
 
   return {
     messages: chat.messages,
     status: chat.status,
     error: chat.error,
+    fixRun,
     submit: (params: { userText: string; mode: ModeType; model: SupportedChatModelId }) => {
+      // Each user prompt in FIX mode starts a fresh fix run with a fresh
+      // budget; outside FIX mode no controller is active.
+      fixRunRef.current = startFixRun(params.mode);
+      setFixRun(fixRunRef.current?.getSnapshot() ?? null);
+
       return chat.sendMessage({
         text: params.userText,
         metadata: {

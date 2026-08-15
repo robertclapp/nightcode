@@ -5,6 +5,7 @@ import { RootLayout } from "./layouts/root-layout";
 import { Home } from "./screens/home";
 import { NewSession } from "./screens/new-session";
 import { Session } from "./screens/session";
+import { isPlainMode, runPlainMode } from "./lib/plain-mode";
 
 const router = createMemoryRouter([
   {
@@ -22,8 +23,15 @@ function App() {
   return <RouterProvider router={router} />
 }
 
-const renderer = await createCliRenderer({
-  targetFps: 60,
-  exitOnCtrlC: false,
-});
-createRoot(renderer).render(<App />);
+// Screen-reader users opt into a linear, plain-text loop instead of the
+// full-screen TUI, which is unreadable to screen readers. The default
+// experience is unchanged.
+if (isPlainMode()) {
+  await runPlainMode();
+} else {
+  const renderer = await createCliRenderer({
+    targetFps: 60,
+    exitOnCtrlC: false,
+  });
+  createRoot(renderer).render(<App />);
+}

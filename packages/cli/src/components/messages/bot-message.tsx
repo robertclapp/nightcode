@@ -2,7 +2,8 @@ import prettyMs from "pretty-ms";
 import { EmptyBorder } from "../border";
 import { useTheme } from "../../providers/theme";
 import type { Message } from "../../hooks/use-chat";
-import { Mode, type ModeType } from "@nightcode/shared";
+import { getModeLabel, type ModeType } from "@nightcode/shared";
+import { getModeColor } from "../../theme";
 import { TextAttributes } from "@opentui/core";
 
 type ClientMessagePart = Message["parts"][number];
@@ -133,10 +134,10 @@ export function BotMessage({
 
       <box paddingX={3} paddingY={1} gap={1} width="100%">
         <box flexDirection="row" gap={2}>
-          <text fg={mode === Mode.PLAN ? colors.planMode : colors.primary}>◉</text>
+          <text fg={getModeColor(mode, colors)}>◉</text>
           <box flexDirection="row" gap={1}>
             <text>
-              {mode === Mode.PLAN ? "Plan" : "Build"}
+              {getModeLabel(mode)}
             </text>
             <text attributes={TextAttributes.DIM} fg={colors.dimSeparator}>
               ›
